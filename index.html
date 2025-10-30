@@ -20,16 +20,18 @@
       .coin .title { color: var(--coin); }
       .open .title { color: var(--open); }
       .title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
-      .winner { margin-bottom: 16px; font-weight: 800; background: linear-gradient(90deg, var(--coin), var(--open)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      /* Apply gradient style to Current Winner text */
+      .winner-person { text-align: center; margin-top: 32px; font-size: 20px; font-weight: 700; background: linear-gradient(90deg, var(--coin), var(--open)); -webkit-background-clip: text; background-clip: text; color: transparent; }
       @media (min-width: 700px) { .cards { grid-template-columns: 1fr 1fr; } }
-      .winner-person { text-align: center; margin-top: 32px; font-size: 20px; font-weight: 700; }
+      .pos { color: var(--coin); }
+      .neg { color: #ef4444; }
     </style>
   </head>
   <body>
     <div class="wrap">
       <h1>COIN vs OPEN — Simple Returns</h1>
       <div class="muted">Anchor date: 2025-09-18</div>
-      <div id="winner" class="winner">Loading…</div>
+      
       <div class="cards">
         <div class="card coin">
           <div class="title">COIN</div>
@@ -105,18 +107,20 @@
         currentEl.textContent = fmt(current);
         const change = (anchor && current) ? (current/anchor - 1) : null;
         changeEl.textContent = fmtPct(change);
+        changeEl.classList.remove("pos", "neg");
+        if (change != null) {
+          if (change > 0) changeEl.classList.add("pos");
+          else if (change < 0) changeEl.classList.add("neg");
+        }
       }
 
       function updateWinner(coinChange, openChange) {
-        const el = document.getElementById("winner");
         const personEl = document.getElementById("winner-person");
-        if (coinChange == null || openChange == null) { el.textContent = "Awaiting data…"; return; }
-        if (Math.abs(coinChange - openChange) < 1e-9) { el.textContent = `Currently tied — COIN ${fmtPct(coinChange)} vs OPEN ${fmtPct(openChange)}`; return; }
+        if (!personEl) return;
+        if (coinChange == null || openChange == null) { personEl.textContent = "Awaiting data…"; return; }
+        if (Math.abs(coinChange - openChange) < 1e-9) { personEl.textContent = "Currently tied"; return; }
         const leader = coinChange > openChange ? "COIN" : "OPEN";
-        el.textContent = `${leader} winning — COIN ${fmtPct(coinChange)} vs OPEN ${fmtPct(openChange)}`;
-        if (personEl) {
-          personEl.textContent = leader === "COIN" ? "Current Winner: Jeevan" : "Current Winner: Mike";
-        }
+        personEl.textContent = leader === "COIN" ? "Current Winner: Jeevan" : "Current Winner: Mike";
       }
 
       async function init() {
@@ -140,8 +144,8 @@
           const openChange = (openAnchor && openCurrent) ? (openCurrent/openAnchor - 1) : null;
           updateWinner(coinChange, openChange);
         } catch (e) {
-          const w = document.getElementById("winner");
-          w.textContent = "Failed to load data from public sources. Please refresh or try again later.";
+          const personEl = document.getElementById("winner-person");
+          if (personEl) personEl.textContent = "Failed to load data. Please refresh or try again later.";
           console.error(e);
         }
       }
