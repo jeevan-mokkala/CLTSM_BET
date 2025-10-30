@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>COIN vs OPEN — Simple Returns</title>
+    <style>
+      :root { --bg:#0b0c10; --card:#15171e; --text:#e5e7eb; --muted:#9aa3b2; --coin:#10b981; --open:#60a5fa; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: -apple-system, BlinkMacSystemFont, Inter, Roboto, Helvetica, Arial, sans-serif; background: radial-gradient(1000px 1000px at 100% -10%, #11131a, var(--bg)); color:var(--text); }
+      .wrap { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+      h1 { margin: 0 0 10px; font-size: 22px; }
+      .muted { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+      .cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+      .card { background: var(--card); border: 1px solid #232634; border-radius: 12px; padding: 14px; }
+      .row { display:flex; justify-content: space-between; gap: 12px; padding: 6px 0; }
+      .row + .row { border-top: 1px dashed #2a2e3f; }
+      .label { color: var(--muted); }
+      .value { font-weight: 600; }
+      .coin .title { color: var(--coin); }
+      .open .title { color: var(--open); }
+      .title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+      .winner { margin-bottom: 16px; font-weight: 800; background: linear-gradient(90deg, var(--coin), var(--open)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      @media (min-width: 700px) { .cards { grid-template-columns: 1fr 1fr; } }
+      .winner-person { text-align: center; margin-top: 32px; font-size: 20px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>COIN vs OPEN — Simple Returns</h1>
+      <div class="muted">Anchor date: 2025-09-18</div>
+      <div id="winner" class="winner">Loading…</div>
+      <div class="cards">
+        <div class="card coin">
+          <div class="title">COIN</div>
+          <div class="row"><div class="label">Anchor price</div><div class="value" id="coin-anchor">—</div></div>
+          <div class="row"><div class="label">Current price</div><div class="value" id="coin-current">—</div></div>
+          <div class="row"><div class="label">% change</div><div class="value" id="coin-change">—</div></div>
+        </div>
+        <div class="card open">
+          <div class="title">OPEN</div>
+          <div class="row"><div class="label">Anchor price</div><div class="value" id="open-anchor">—</div></div>
+          <div class="row"><div class="label">Current price</div><div class="value" id="open-current">—</div></div>
+          <div class="row"><div class="label">% change</div><div class="value" id="open-change">—</div></div>
+        </div>
+      </div>
+      <div id="winner-person" class="winner-person">&nbsp;</div>
+    </div>
+
+    <script>
+      const ANCHOR = "2025-09-18";
+      const SYMBOLS = { COIN: "coin.us", OPEN: "open.us" };
+
+      function fmt(n) { return n == null ? "—" : Number(n).toFixed(2); }
+      function fmtPct(x) { return x == null ? "—" : `${x >= 0 ? "+" : ""}${(x*100).toFixed(2)}%`; }
+
+      async function fetchCsv(sym) {
+        const base = `stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`;
+        const candidates = [
+          `https://${base}`,
+          `http://${base}`,
+          // CORS-friendly proxies as fallbacks (best-effort)
+          `https://r.jina.ai/http://${base}`,
+          `https://r.jina.ai/https://${base}`,
+          `https://cors.isomorphic-git.org/https://${base}`
+        ];
+        let lastErr;
+        for (const url of candidates) {
+          try {
+            const res = await fetch(url, { cache: "no-store" });
+            if (!res.ok) { lastErr = new Error(`Bad status ${res.status} for ${url}`); continue; }
+            const text = await res.text();
+            if (!text || !/Date,Open,High,Low,Close,Volume/i.test(text)) { lastErr = new Error(`Unexpected body from ${url}`); continue; }
+            return text;
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        throw lastErr || new Error("All fetch attempts failed");
+      }
+
+      function csvToMap(csv) {
+        const lines = csv.trim().split(/\r?\n/);
+        const map = new Map(); // date -> close
+        for (let i=1;i<lines.length;i++) {
+          const [date, _o, _h, _l, close] = lines[i].split(",");
+          const c = Number(close);
+          if (date && Number.isFinite(c)) map.set(date, c);
+        }
+        return map;
+      }
+
+      function latestClose(map) {
+        if (map.size === 0) return null;
+        const keys = Array.from(map.keys()).sort();
+        const last = keys[keys.length-1];
+        return map.get(last);
+      }
+
+      function updateCard(prefix, anchor, current) {
+        const anchorEl = document.getElementById(`${prefix}-anchor`);
+        const currentEl = document.getElementById(`${prefix}-current`);
+        const changeEl = document.getElementById(`${prefix}-change`);
+        anchorEl.textContent = fmt(anchor);
+        currentEl.textContent = fmt(current);
+        const change = (anchor && current) ? (current/anchor - 1) : null;
+        changeEl.textContent = fmtPct(change);
+      }
+
+      function updateWinner(coinChange, openChange) {
+        const el = document.getElementById("winner");
+        const personEl = document.getElementById("winner-person");
+        if (coinChange == null || openChange == null) { el.textContent = "Awaiting data…"; return; }
+        if (Math.abs(coinChange - openChange) < 1e-9) { el.textContent = `Currently tied — COIN ${fmtPct(coinChange)} vs OPEN ${fmtPct(openChange)}`; return; }
+        const leader = coinChange > openChange ? "COIN" : "OPEN";
+        el.textContent = `${leader} winning — COIN ${fmtPct(coinChange)} vs OPEN ${fmtPct(openChange)}`;
+        if (personEl) {
+          personEl.textContent = leader === "COIN" ? "Current Winner: Jeevan" : "Current Winner: Mike";
+        }
+      }
+
+      async function init() {
+        try {
+          const [coinCsv, openCsv] = await Promise.all([
+            fetchCsv(SYMBOLS.COIN),
+            fetchCsv(SYMBOLS.OPEN)
+          ]);
+          const coin = csvToMap(coinCsv);
+          const open = csvToMap(openCsv);
+
+          const coinAnchor = coin.get(ANCHOR) ?? null;
+          const openAnchor = open.get(ANCHOR) ?? null;
+          const coinCurrent = latestClose(coin);
+          const openCurrent = latestClose(open);
+
+          updateCard("coin", coinAnchor, coinCurrent);
+          updateCard("open", openAnchor, openCurrent);
+
+          const coinChange = (coinAnchor && coinCurrent) ? (coinCurrent/coinAnchor - 1) : null;
+          const openChange = (openAnchor && openCurrent) ? (openCurrent/openAnchor - 1) : null;
+          updateWinner(coinChange, openChange);
+        } catch (e) {
+          const w = document.getElementById("winner");
+          w.textContent = "Failed to load data from public sources. Please refresh or try again later.";
+          console.error(e);
+        }
+      }
+
+      window.addEventListener("DOMContentLoaded", init);
+    </script>
+  </body>
+  </html>
+
+
