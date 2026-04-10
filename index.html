@@ -50,10 +50,9 @@
     </div>
 
     <script>
-      const FINNHUB_TOKEN = "VG2RIZANL902ZWZ5";
-      // Anchor date: 2025-09-18 — Unix timestamps (UTC)
-      const ANCHOR_FROM = 1758153600; // 2025-09-18 00:00:00 UTC
-      const ANCHOR_TO   = 1758239999; // 2025-09-18 23:59:59 UTC
+      const FINNHUB_TOKEN = "d7cjo09r01qv03esk2kgd7cjo09r01qv03esk2l0";
+      // Anchor prices: NASDAQ close on 2025-09-18 (fixed, never changes)
+      const ANCHOR = { COIN: 343.13, OPEN: 9.94 };
 
       function fmt(n) { return n == null ? "—" : Number(n).toFixed(2); }
       function fmtPct(x) { return x == null ? "—" : `${x >= 0 ? "+" : ""}${(x*100).toFixed(2)}%`; }
@@ -65,17 +64,6 @@
         const data = await res.json();
         if (!data.c) throw new Error(`No current price for ${symbol}`);
         return data.c;
-      }
-
-      async function fetchAnchorPrice(symbol) {
-        const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${ANCHOR_FROM}&to=${ANCHOR_TO}&token=${FINNHUB_TOKEN}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Candle fetch failed for ${symbol}: ${res.status}`);
-        const data = await res.json();
-        if (data.s !== "ok" || !data.c || data.c.length === 0) {
-          throw new Error(`No candle data for ${symbol} on anchor date`);
-        }
-        return data.c[0]; // close price for the anchor date
       }
 
       function updateCard(prefix, anchor, current) {
@@ -104,12 +92,12 @@
 
       async function init() {
         try {
-          const [coinAnchor, openAnchor, coinCurrent, openCurrent] = await Promise.all([
-            fetchAnchorPrice("COIN"),
-            fetchAnchorPrice("OPEN"),
+          const [coinCurrent, openCurrent] = await Promise.all([
             fetchCurrentPrice("COIN"),
             fetchCurrentPrice("OPEN")
           ]);
+          const coinAnchor = ANCHOR.COIN;
+          const openAnchor = ANCHOR.OPEN;
 
           updateCard("coin", coinAnchor, coinCurrent);
           updateCard("open", openAnchor, openCurrent);
