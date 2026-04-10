@@ -50,53 +50,32 @@
     </div>
 
     <script>
-      const ANCHOR = "2025-09-18";
-      const SYMBOLS = { COIN: "coin.us", OPEN: "open.us" };
+      const FINNHUB_TOKEN = "VG2RIZANL902ZWZ5";
+      // Anchor date: 2025-09-18 — Unix timestamps (UTC)
+      const ANCHOR_FROM = 1758153600; // 2025-09-18 00:00:00 UTC
+      const ANCHOR_TO   = 1758239999; // 2025-09-18 23:59:59 UTC
 
       function fmt(n) { return n == null ? "—" : Number(n).toFixed(2); }
       function fmtPct(x) { return x == null ? "—" : `${x >= 0 ? "+" : ""}${(x*100).toFixed(2)}%`; }
 
-      async function fetchCsv(sym) {
-        const base = `stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`;
-        const candidates = [
-          `https://${base}`,
-          `http://${base}`,
-          // CORS-friendly proxies as fallbacks (best-effort)
-          `https://r.jina.ai/http://${base}`,
-          `https://r.jina.ai/https://${base}`,
-          `https://cors.isomorphic-git.org/https://${base}`
-        ];
-        let lastErr;
-        for (const url of candidates) {
-          try {
-            const res = await fetch(url, { cache: "no-store" });
-            if (!res.ok) { lastErr = new Error(`Bad status ${res.status} for ${url}`); continue; }
-            const text = await res.text();
-            if (!text || !/Date,Open,High,Low,Close,Volume/i.test(text)) { lastErr = new Error(`Unexpected body from ${url}`); continue; }
-            return text;
-          } catch (e) {
-            lastErr = e;
-          }
-        }
-        throw lastErr || new Error("All fetch attempts failed");
+      async function fetchCurrentPrice(symbol) {
+        const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_TOKEN}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Quote fetch failed for ${symbol}: ${res.status}`);
+        const data = await res.json();
+        if (!data.c) throw new Error(`No current price for ${symbol}`);
+        return data.c;
       }
 
-      function csvToMap(csv) {
-        const lines = csv.trim().split(/\r?\n/);
-        const map = new Map(); // date -> close
-        for (let i=1;i<lines.length;i++) {
-          const [date, _o, _h, _l, close] = lines[i].split(",");
-          const c = Number(close);
-          if (date && Number.isFinite(c)) map.set(date, c);
+      async function fetchAnchorPrice(symbol) {
+        const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${ANCHOR_FROM}&to=${ANCHOR_TO}&token=${FINNHUB_TOKEN}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Candle fetch failed for ${symbol}: ${res.status}`);
+        const data = await res.json();
+        if (data.s !== "ok" || !data.c || data.c.length === 0) {
+          throw new Error(`No candle data for ${symbol} on anchor date`);
         }
-        return map;
-      }
-
-      function latestClose(map) {
-        if (map.size === 0) return null;
-        const keys = Array.from(map.keys()).sort();
-        const last = keys[keys.length-1];
-        return map.get(last);
+        return data.c[0]; // close price for the anchor date
       }
 
       function updateCard(prefix, anchor, current) {
@@ -125,17 +104,12 @@
 
       async function init() {
         try {
-          const [coinCsv, openCsv] = await Promise.all([
-            fetchCsv(SYMBOLS.COIN),
-            fetchCsv(SYMBOLS.OPEN)
+          const [coinAnchor, openAnchor, coinCurrent, openCurrent] = await Promise.all([
+            fetchAnchorPrice("COIN"),
+            fetchAnchorPrice("OPEN"),
+            fetchCurrentPrice("COIN"),
+            fetchCurrentPrice("OPEN")
           ]);
-          const coin = csvToMap(coinCsv);
-          const open = csvToMap(openCsv);
-
-          const coinAnchor = coin.get(ANCHOR) ?? null;
-          const openAnchor = open.get(ANCHOR) ?? null;
-          const coinCurrent = latestClose(coin);
-          const openCurrent = latestClose(open);
 
           updateCard("coin", coinAnchor, coinCurrent);
           updateCard("open", openAnchor, openCurrent);
